@@ -1,0 +1,68 @@
+{
+  "dataset_source": "jsonl",
+  "dataset_name": "all",
+  "dataset_mode": "augment",
+  "dataset_dir": "./augmented_benchmark",
+  "start_idx": 0,
+  "num_samples_eval": 1,
+  "methods": [
+    "lexical_similarity",
+    "mean_token_entropy",
+    "monte_carlo_sequence_entropy",
+    "p_true",
+    "perplexity",
+    "self_certainty",
+    "sequence_log_probability"
+  ],
+  "metrics": {
+    "lexical_similarity": {
+      "n_valid": 1,
+      "n_error": 1,
+      "n_correct": 0,
+      "auroc": null,
+      "auprc": null
+    },
+    "mean_token_entropy": {
+      "n_valid": 1,
+      "n_error": 1,
+      "n_correct": 0,
+      "auroc": null,
+      "auprc": null
+    },
+    "monte_carlo_sequence_entropy": {
+      "n_valid": 1,
+      "n_error": 1,
+      "n_correct": 0,
+      "auroc": null,
+      "auprc": null
+    },
+    "p_true": {
+      "n_valid": 1,
+      "n_error": 1,
+      "n_correct": 0,
+      "auroc": null,
+      "auprc": null
+    },
+    "perplexity": {
+      "n_valid": 1,
+      "n_error": 1,
+      "n_correct": 0,
+      "auroc": null,
+      "auprc": null
+    },
+    "self_certainty": {
+      "n_valid": 1,
+      "n_error": 1,
+      "n_correct": 0,
+      "auroc": null,
+      "auprc": null
+    },
+    "sequence_log_probability": {
+      "n_valid": 1,
+      "n_error": 1,
+      "n_correct": 0,
+      "auroc": null,
+      "auprc": null
+    }
+  }
+}
