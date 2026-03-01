@@ -280,6 +280,36 @@ class HFBackend(BaseBackend):
             texts.append(self.tokenizer.decode(completion, skip_special_tokens=True).strip())
         return texts
 
+    def _extract_eigenscore_embedding(
+        self,
+        model_inputs: Dict[str, torch.Tensor],
+        generated_ids: Any,
+    ) -> np.ndarray:
+        seq = _as_sequences(generated_ids)
+        if seq.dim() == 1:
+            seq = seq.unsqueeze(0)
+
+        prompt_len = int(model_inputs["input_ids"].shape[1])
+        seq_len = int(seq.shape[1])
+        completion_len = max(seq_len - prompt_len, 0)
+
+        if completion_len <= 0:
+            selected_abs_idx = seq_len - 1
+        else:
+            selected_rel_idx = completion_len - 2
+            if selected_rel_idx < 0:
+                selected_rel_idx = completion_len - 1
+            selected_abs_idx = min(prompt_len + selected_rel_idx, seq_len - 1)
+
+        outputs = self.model(seq.to(self.model.device), output_hidden_states=True)
+        hidden_states = outputs.hidden_states
+        if not hidden_states:
+            return np.zeros((0,), dtype=np.float64)
+
+        selected_layer = len(hidden_states) // 2
+        layer_states = hidden_states[selected_layer]
+        return layer_states[0, selected_abs_idx, :].detach().float().cpu().numpy()
+
     @torch.no_grad()
     def collect_sampling_stats(
         self,
@@ -288,6 +318,7 @@ class HFBackend(BaseBackend):
         num_samples: int,
         sample_temperature: float,
         sample_top_p: float,
+        need_eigenscore_embeddings: bool = False,
     ) -> Dict[str, Any]:
         sampled = self._sample(
             model_inputs=model_inputs,
@@ -300,19 +331,26 @@ class HFBackend(BaseBackend):
             return {
                 "sampled_texts": [],
                 "sampled_sequence_nlls": [],
+                "eigenscore_embeddings": [],
             }
 
         texts = self._decode_sample_texts(model_inputs, sampled)
         nlls = []
+        eigenscore_embeddings = []
         for generated in sampled:
             prompt_ids, completion_ids = self._extract_prompt_and_completion_ids(model_inputs, generated)
             stats = self.compute_logprob_stats(prompt_ids, completion_ids)
             log_probs = stats["completion_log_probs"]
             nll = float(-np.mean(log_probs)) if len(log_probs) > 0 else 0.0
             nlls.append(nll)
+            if need_eigenscore_embeddings:
+                eigenscore_embeddings.append(
+                    self._extract_eigenscore_embedding(model_inputs=model_inputs, generated_ids=generated)
+                )
         return {
             "sampled_texts": texts,
             "sampled_sequence_nlls": nlls,
+            "eigenscore_embeddings": eigenscore_embeddings,
         }
 
     def _get_single_token_id(self, text: str) -> int:

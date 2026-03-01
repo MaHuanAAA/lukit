@@ -42,6 +42,7 @@ class BaseBackend(ABC):
         num_samples: int,
         sample_temperature: float,
         sample_top_p: float,
+        need_eigenscore_embeddings: bool = False,
     ) -> Dict[str, Any]:
         raise NotImplementedError
 

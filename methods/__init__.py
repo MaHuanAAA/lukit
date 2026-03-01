@@ -14,6 +14,7 @@ _METHOD_MODULES = [
     "monte_carlo_sequence_entropy",
     "lexical_similarity",
     "p_true",
+    "eigenscore",
 ]
 
 

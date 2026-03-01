@@ -1,5 +1,7 @@
 # lukit Methods Tutorial
 
+本文严格对应当前代码实现，逐步解释 `lukit` 中已实现的 8 个不确定性方法（`methods/`）。
+
 
 ## 1. 运行流程（代码级）
 
@@ -114,10 +116,28 @@
   $$
 - 返回字段为 `{"u": u, "p_true": p_true}`。
 
+### 3.8 `eigenscore`
+
+- 依赖：`sampling_stats`。
+- 采样阶段会为每个 sample 额外提取一个向量 `eigenscore_embeddings[i]\in\mathbb{R}^d`：
+  - hidden states 取中间层（`len(hidden_states)//2`）；
+  - token 索引优先取 completion 的 `$T_k-2$`，过短时回退到最后一个 completion token。
+- 令矩阵 $H\in\mathbb{R}^{N\times d}$ 为所有采样 embedding 堆叠（$N$ 为采样数），实现中计算：
+  $$
+  C=\mathrm{cov}(H)\in\mathbb{R}^{N\times N},
+  \qquad
+  C\leftarrow C+\alpha I,\ \alpha=10^{-3}.
+  $$
+- 特征值分解后输出：
+  $$
+  u=\frac{1}{N}\sum_{i=1}^{N}\log_{10}(\lambda_i).
+  $$
+- 数值稳定：特征值会被裁剪到至少 $10^{-12}$ 再取对数。
+
 ## 4. 参数如何影响方法
 
 - `--num_samples` / `--sample_temperature` / `--sample_top_p`：
-  影响 `sampling_stats`，因此影响 `monte_carlo_sequence_entropy` 与 `lexical_similarity`。
+  影响 `sampling_stats`，因此影响 `monte_carlo_sequence_entropy`、`lexical_similarity`、`eigenscore`。
 - `--lexical_metric`：仅影响 `lexical_similarity`。
 - `--p_true_with_context`：仅影响 `p_true` provider 的提示词（是否加入 `extra_context`）。
 - `--temperature` / `--top_p`：影响主回答 `a_model`，从而间接影响所有方法。

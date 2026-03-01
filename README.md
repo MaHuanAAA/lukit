@@ -19,6 +19,7 @@ pip install -r requirements.txt
 - `monte_carlo_sequence_entropy`
 - `lexical_similarity`
 - `p_true`
+- `eigenscore`
 
 查看当前注册方法：
 

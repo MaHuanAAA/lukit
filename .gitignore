@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+*.log
+
+# Data
+# *.jsonl
+# *.json
+
+# Model weights
+*.pt
+*.pth
+*.ckpt
+
+# Mac / Linux
+.DS_Store

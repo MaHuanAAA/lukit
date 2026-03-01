@@ -96,6 +96,10 @@ class ExecutionEngine:
                 if method.name == "p_true" and hasattr(method, "with_context"):
                     runtime_kwargs["p_true_with_context"] = bool(getattr(method, "with_context"))
                     break
+        if "need_eigenscore_embeddings" not in runtime_kwargs:
+            runtime_kwargs["need_eigenscore_embeddings"] = any(
+                method.name == "eigenscore" for method in methods
+            )
 
         prompt_text = self.backend.apply_chat_template(question)
         model_outputs = self.backend.generate(

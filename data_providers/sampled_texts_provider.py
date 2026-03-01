@@ -18,10 +18,12 @@ class SamplingStatsProvider(DataProvider):
                 num_samples=int(kwargs.get("num_samples", 4)),
                 sample_temperature=float(kwargs.get("sample_temperature", 0.8)),
                 sample_top_p=float(kwargs.get("sample_top_p", 0.9)),
+                need_eigenscore_embeddings=bool(kwargs.get("need_eigenscore_embeddings", False)),
             )
         except torch.OutOfMemoryError as exc:
             return {
                 "sampled_texts": [],
                 "sampled_sequence_nlls": [],
+                "eigenscore_embeddings": [],
                 "__warning__": f"Sampling skipped due to CUDA OOM: {exc}",
             }
