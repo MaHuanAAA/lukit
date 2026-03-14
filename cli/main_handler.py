@@ -92,6 +92,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample_top_p", type=float, default=0.9)
     parser.add_argument("--lexical_metric", type=str, default="rougeL")
     parser.add_argument("--p_true_with_context", action="store_true")
+    
+    # Similarity matrix parameters
+    parser.add_argument("--similarity_metric", type=str, default="jaccard",
+                        choices=["jaccard", "nli"])
+    parser.add_argument("--nli_model_path", type=str, default="")
+    parser.add_argument("--nli_device", type=str, default=None, 
+                        help="Device for NLI model (e.g., cuda:1). If None, leverages main model device.")
+    parser.add_argument("--nli_affinity_mode", type=str, default="disagreement_w",
+                        choices=["disagreement", "disagreement_w", "agreement", "agreement_w"])
+    parser.add_argument("--nli_temperature", type=float, default=3.0)
+    parser.add_argument("--similarity_threshold", type=float, default=0.5,
+                        help="Threshold for graph-based UQ methods to consider an edge connected.")
 
     parser.add_argument(
         "--judge_model_path",
@@ -335,6 +347,9 @@ def build_methods(args: argparse.Namespace):
             kwargs["metric"] = args.lexical_metric
         elif name == "p_true":
             kwargs["with_context"] = args.p_true_with_context
+        elif name == "numset" and hasattr(args, "similarity_threshold"):
+            kwargs["threshold"] = args.similarity_threshold
+            
         built.append(create_method(name, **kwargs))
     return built
 
@@ -687,6 +702,11 @@ def main() -> None:
         sample_temperature=args.sample_temperature,
         sample_top_p=args.sample_top_p,
         p_true_with_context=args.p_true_with_context,
+        similarity_metric=args.similarity_metric,
+        nli_model_path=args.nli_model_path,
+        nli_affinity_mode=args.nli_affinity_mode,
+        nli_device=args.nli_device,
+        nli_temperature=args.nli_temperature,
         show_progress=True,
         progress_desc="Generation",
     )

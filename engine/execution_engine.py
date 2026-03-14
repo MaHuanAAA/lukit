@@ -114,7 +114,8 @@ class ExecutionEngine:
         stats: Dict[str, Any] = {}
         warnings: List[str] = []
         for provider in providers:
-            provided = provider(model_outputs, backend=self.backend, **runtime_kwargs)
+            # pass accumulated stats so downstream providers can use upstream results e.g. sampling_stats
+            provided = provider(model_outputs, backend=self.backend, **runtime_kwargs, **stats)
             if isinstance(provided, dict) and "__warning__" in provided:
                 warnings.append(str(provided["__warning__"]))
                 provided = {k: v for k, v in provided.items() if k != "__warning__"}

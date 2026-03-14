@@ -1,3 +1,8 @@
+import sys
+import os
+
+
+sys.path.append("/data1/kongxinke")
 from lukit.engine import ExecutionEngine
 from lukit.methods import create_method
 

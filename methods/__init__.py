@@ -15,6 +15,10 @@ _METHOD_MODULES = [
     "lexical_similarity",
     "p_true",
     "eigenscore",
+    "eccentricity",
+    "eigvalue",
+    "numset",
+    "degree",
 ]
 
 

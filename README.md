@@ -20,6 +20,10 @@ pip install -r requirements.txt
 - `lexical_similarity`
 - `p_true`
 - `eigenscore`
+- `eccentricity` (基于谱图理论映射质心范数距离)
+- `eigvalue` (基于归一化拉普拉斯矩阵的逆特征值和)
+- `numset` (连通分支数，基于相似度图聚类数)
+- `degree` (图散落度均值，即平均不一致度)
 
 查看当前注册方法：
 
@@ -53,6 +57,7 @@ python scripts/run_lukit.py \
   --sample_temperature 0.8 \
   --sample_top_p 0.9 \
   --lexical_metric rougeL \
+  --similarity_metric jaccard \
   --judge_model_path /data1/chenjingdong/ms/Qwen__Qwen3-4B-Instruct-2507 \
   --judge_device cuda:5 \
   --judge_max_new_tokens 16 \
@@ -88,14 +93,20 @@ python scripts/run_lukit.py --list-methods
 - `--dataset_name`（`jsonl`）：`chinese_simpleqa`、`hotpot_qa`、`nq_open`、`simpleqa_verified`、`triviaqa_validation`、`webqa`、`all`（扫描目录下全部 `.jsonl`）。
 - `--start_idx`：从第几个样本开始评测。
 - `--num_samples_eval`：本次评测样本数。
-- `--methods`：运行的方法；`all` 或逗号分隔列表（如 `p_true,mean_token_entropy`）。
+- `--methods`：运行的方法；`all` 或逗号分隔列表（如 `p_true,mean_token_entropy,degree,eccentricity`）。
 - `--max_new_tokens`：主模型单次生成的最大新 token 数。
 - `--temperature`：主模型生成温度；`0.0` 表示贪心解码。
 - `--top_p`：主模型 nucleus 采样阈值；通常与 `temperature > 0` 一起使用。
-- `--num_samples`：采样类方法的采样次数（如 lexical/sampling 类方法）。
+- `--num_samples`：采样类方法的采样次數（针对 lexical/sampling 及图类方法如 Eccentricity）。
 - `--sample_temperature`：采样类方法的温度。
 - `--sample_top_p`：采样类方法的 top-p。
-- `--lexical_metric`：`lexical_similarity` 使用的相似度指标；常用 `rougeL`、`rouge1`、`rouge2`、`BLEU`。
+- `--lexical_metric`：`lexical_similarity` 使用的相似度指标；常用 `rougeL`、`rouge1`、`BLEU`。
+- `--similarity_metric`：图类 UQ 方法（degree/eigvalue 等）获取相似度的方式；可选 `jaccard` 或 `nli`。
+- `--similarity_threshold`：图类 UQ 方法构建边连接的阈值（默认 `0.5`）。
+- `--nli_model_path`：当选择 `nli` 时所需的模型路径，支持传统的 NLI 分类模型（如 `microsoft/deberta-large-mnli`）或生成式判别模型（如 `TIGER-Lab/general-verifier`）。
+- `--nli_device`：NLI 模型运行设备；若不指定则默认与主模型一致。
+- `--nli_affinity_mode`：选择构建关系网的边权重概率依据，默认为 `disagreement_w` (基于不矛盾概率)，也可输入 `agreement` 等。
+- `--nli_temperature`：NLI 输出做 softmax 的平滑温度，默认为 `3.0`。
 - `--p_true_with_context`：布尔开关；写上即启用，不写即关闭。
 - `--judge_model_path`：judge 模型路径（你当前使用 Qwen：`/data1/chenjingdong/ms/Qwen__Qwen3-4B-Instruct-2507`）。
 - `--judge_device`：judge 模型设备；可与生成模型分卡运行。
@@ -137,13 +148,13 @@ python scripts/run_lukit.py \
 
 ## 7. Python API 示例
 
-`scripts/test_api.py` 是可直接运行的最小示例：
+`scripts/test_api.py` 是可直接运行的最小示例（可用来小规模测试）：
 
 ```bash
 python scripts/test_api.py
 ```
 
-核心调用方式：
+核心调用方式（以新增图论方法为例）：
 
 ```python
 from lukit.engine import ExecutionEngine
@@ -153,11 +164,19 @@ engine = ExecutionEngine(
     model="/data1/chenjingdong/ms/meta-llama__Llama-3.1-8B-Instruct",
     backend_config={"type": "huggingface", "device": "cuda:4"},
 )
-method = create_method("p_true")
-record = engine.run_single(prompt="What is 2+2?", method=method, max_new_tokens=32)
+# 测试 degree 不确定度，使用默认的 jaccard 相似度提取
+method = create_method("degree")
+
+record = engine.run_single(
+    prompt="What is 2+2?", 
+    method=method, 
+    max_new_tokens=32,
+    num_samples=5,
+    similarity_metric="jaccard"
+)
 
 print(record["a_model"])
-print(record["u"]["p_true"])
+print(record["u"]["degree"])
 ```
 
 ## 8. 目录

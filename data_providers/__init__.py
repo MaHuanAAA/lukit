@@ -12,6 +12,7 @@ _PROVIDER_MODULES = [
     "log_probs_provider",
     "sampled_texts_provider",
     "hidden_states_provider",
+    "similarity_matrix_provider",
 ]
 
 

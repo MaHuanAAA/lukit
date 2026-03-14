@@ -423,3 +423,178 @@ class HFBackend(BaseBackend):
             top_p=top_p,
         )
         return result["answer_text"]
+
+    def _lazy_load_nli_model(self, nli_model_path: str, nli_device: str = None):
+        if not hasattr(self, "nli_model") or self._nli_model_path != nli_model_path:
+            import torch
+            from transformers import AutoModelForSequenceClassification, AutoModelForCausalLM, AutoTokenizer
+            
+            # Use requested device or fallback to main device
+            target_device = nli_device if nli_device else self.device
+            
+            self.nli_tokenizer = AutoTokenizer.from_pretrained(nli_model_path, trust_remote_code=True)
+            self.nli_is_generative = False
+            
+            if "verifier" in nli_model_path.lower() or "llm" in nli_model_path.lower() or "qwen" in nli_model_path.lower():
+                self.nli_is_generative = True
+                self.nli_model = AutoModelForCausalLM.from_pretrained(
+                    nli_model_path, trust_remote_code=True, torch_dtype=torch.float16
+                ).to(target_device).eval()
+                if self.nli_tokenizer.pad_token is None:
+                    self.nli_tokenizer.pad_token = self.nli_tokenizer.eos_token
+                self.nli_tokenizer.padding_side = "left"
+            else:
+                self.nli_model = AutoModelForSequenceClassification.from_pretrained(
+                    nli_model_path, trust_remote_code=True
+                ).to(target_device).eval()
+                
+            self._nli_model_path = nli_model_path
+            self._nli_device = target_device
+
+    @torch.no_grad()
+    def compute_nli_affinity_matrix(
+        self,
+        question: str,
+        answers: List[str],
+        nli_model_path: str,
+        affinity_mode: str = "disagreement_w",
+        temperature: float = 3.0,
+        symmetric: bool = True,
+        nli_device: str = None
+    ) -> np.ndarray:
+        if not nli_model_path:
+            raise ValueError("nli_model_path is required for NLI similarity matrix computation.")
+
+        self._lazy_load_nli_model(nli_model_path, nli_device=nli_device)
+        target_device = self._nli_device
+        
+        unique_ans = sorted(list(set(answers)))
+        n_unique = len(unique_ans)
+        
+        if getattr(self, "nli_is_generative", False):
+            # Generative Verifier (e.g. TIGER-Lab/general-verifier) Mode
+            sim_mat_unique = torch.zeros((n_unique, n_unique), device=target_device)
+            pairs_to_compute = []
+            indices = []
+            
+            for i in range(n_unique):
+                for j in range(n_unique):
+                    if i == j: 
+                        sim_mat_unique[i, j] = 1.0
+                        continue
+                    prompt = f"Question: {question}\nReference Answer: {unique_ans[i]}\nStudent Answer: {unique_ans[j]}\nIs the student answer correct?"
+                    try:
+                        messages = [{"role": "user", "content": prompt}]
+                        chat_prompt = self.nli_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                    except Exception:
+                        chat_prompt = prompt
+                    pairs_to_compute.append(chat_prompt)
+                    indices.append((i, j))
+                    
+            if pairs_to_compute:
+                batch_size = 16 
+                try:
+                    true_id = self.nli_tokenizer.encode("True", add_special_tokens=False)[-1]
+                    false_id = self.nli_tokenizer.encode("False", add_special_tokens=False)[-1]
+                except Exception:
+                    true_id, false_id = 0, 1
+                    
+                for start_idx in range(0, len(pairs_to_compute), batch_size):
+                    batch_pairs = pairs_to_compute[start_idx : start_idx + batch_size]
+                    inputs = self.nli_tokenizer(batch_pairs, padding=True, truncation=True, return_tensors="pt").to(target_device)
+                    
+                    with torch.no_grad():
+                        logits = self.nli_model(**inputs).logits[:, -1, :]
+                        
+                    for b_idx in range(len(batch_pairs)):
+                        t_logit = logits[b_idx, true_id]
+                        f_logit = logits[b_idx, false_id]
+                        # We use temperature scaling on logits 
+                        prob_true = float(torch.softmax(torch.stack([t_logit / temperature, f_logit / temperature]), dim=0)[0].item())
+                        
+                        actual_idx = start_idx + b_idx
+                        i, j = indices[actual_idx]
+                        sim_mat_unique[i, j] = prob_true
+                        
+            W_unique = sim_mat_unique
+            if symmetric:
+                W_unique = (W_unique + W_unique.permute(1, 0)) / 2
+                
+        else:
+            # Traditional Sequence Classification Mode (DeBERTa-MNLI)
+            num_labels = getattr(self.nli_model.config, "num_labels", 3)
+            sim_mat_unique = torch.zeros((n_unique, n_unique, num_labels), device=target_device)
+            pairs_to_compute = []
+            indices = []
+            
+            for i in range(n_unique):
+                for j in range(n_unique):
+                    if i == j: continue
+                    # Input format for DeBERTa MNLI: premise [SEP] hypothesis
+                    pairs_to_compute.append(f"{question} {unique_ans[i]} [SEP] {question} {unique_ans[j]}")
+                    indices.append((i, j))
+                    
+            if pairs_to_compute:
+                batch_size = 64
+                all_logits = []
+                for start_idx in range(0, len(pairs_to_compute), batch_size):
+                    batch_pairs = pairs_to_compute[start_idx : start_idx + batch_size]
+                    inputs = self.nli_tokenizer(batch_pairs, padding=True, truncation=True, return_tensors="pt").to(target_device)
+                    logits = self.nli_model(**inputs).logits
+                    all_logits.append(logits)
+                
+                all_logits = torch.cat(all_logits, dim=0)
+                for idx, (i, j) in enumerate(indices):
+                    sim_mat_unique[i, j] = all_logits[idx]
+                    
+            # Fetch the exact indices for contradiction and entailment from the model config
+            label2id = getattr(self.nli_model.config, "label2id", {})
+            
+            # Fallback mappings
+            contradiction_id = 0
+            entailment_id = 2 if num_labels > 2 else 1
+            
+            if label2id:
+                for label, idx in label2id.items():
+                    if "contradiction" in label.lower():
+                        contradiction_id = idx
+                    elif "entailment" in label.lower() or "entail" in label.lower():
+                        entailment_id = idx
+            
+            # Calculate affinity from logits based on mode
+            if affinity_mode == 'disagreement':
+                sim_mat_unique = (sim_mat_unique + sim_mat_unique.permute(1, 0, 2)) / 2
+                W_unique = (sim_mat_unique.argmax(-1) != contradiction_id).float()
+            elif affinity_mode == 'disagreement_w':
+                probs = torch.softmax(sim_mat_unique / temperature, dim=-1)
+                # Probability of contradiction
+                W_unique = probs[:, :, contradiction_id]
+                if symmetric:
+                    W_unique = (W_unique + W_unique.permute(1, 0)) / 2
+                # Affinity is 1 - disagreement
+                W_unique = 1.0 - W_unique
+            elif affinity_mode == 'agreement':
+                sim_mat_unique = (sim_mat_unique + sim_mat_unique.permute(1, 0, 2)) / 2
+                W_unique = (sim_mat_unique.argmax(-1) == entailment_id).float()
+            elif affinity_mode == 'agreement_w':
+                probs = torch.softmax(sim_mat_unique / temperature, dim=-1)
+                # Probability of entailment
+                W_unique = probs[:, :, entailment_id]
+                if symmetric:
+                    W_unique = (W_unique + W_unique.permute(1, 0)) / 2
+            else:
+                raise ValueError(f"Unknown affinity_mode: {affinity_mode}")
+            
+        W_unique = W_unique.cpu().numpy()
+        np.fill_diagonal(W_unique, 1.0)
+        
+        # Map back from unique to original answers
+        n_orig = len(answers)
+        W = np.zeros((n_orig, n_orig), dtype=np.float32)
+        ans_to_idx = {ans: i for i, ans in enumerate(unique_ans)}
+        
+        for i in range(n_orig):
+            for j in range(n_orig):
+                W[i, j] = W_unique[ans_to_idx[answers[i]], ans_to_idx[answers[j]]]
+                
+        return W

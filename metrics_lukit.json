@@ -1,0 +1,44 @@
+{
+  "dataset_source": "hf",
+  "dataset_name": "trivia_qa_split",
+  "dataset_mode": null,
+  "dataset_dir": null,
+  "start_idx": 0,
+  "num_samples_eval": 150,
+  "methods": [
+    "eccentricity",
+    "eigvalue",
+    "numset",
+    "degree"
+  ],
+  "metrics": {
+    "eccentricity": {
+      "n_valid": 150,
+      "n_error": 109,
+      "n_correct": 41,
+      "auroc": 0.5737301409711344,
+      "auprc": 0.7846310760354356
+    },
+    "eigvalue": {
+      "n_valid": 150,
+      "n_error": 109,
+      "n_correct": 41,
+      "auroc": 0.600805549339897,
+      "auprc": 0.8042875284140636
+    },
+    "numset": {
+      "n_valid": 150,
+      "n_error": 109,
+      "n_correct": 41,
+      "auroc": 0.5,
+      "auprc": 0.7266666666666667
+    },
+    "degree": {
+      "n_valid": 150,
+      "n_error": 109,
+      "n_correct": 41,
+      "auroc": 0.5967778026404118,
+      "auprc": 0.8013608434993373
+    }
+  }
+}

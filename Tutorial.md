@@ -134,16 +134,67 @@
   $$
 - 数值稳定：特征值会被裁剪到至少 $10^{-12}$ 再取对数。
 
-## 4. 参数如何影响方法
+### 3.9 `degree`
+
+- 依赖：`sampling_stats` + `similarity_matrix_stats`
+- 实现：
+  $$
+  u=\frac{1}{K}\sum_{i=1}^{K}\sum_{j=1}^{K}(1-w_{ij}).
+  $$
+- 即所有采样对的平均不一致度（Disagreement）。
+
+### 3.10 `eccentricity`
+
+- 依赖：`sampling_stats` + `similarity_matrix_stats`
+- 实现：
+  1. 基于 $W$ 构建归一化拉普拉斯矩阵 $L$。
+  2. 对 $L$ 进行特征值分解，取小于阈值（默认 `0.9`）的特征值对应的特征向量作为谱嵌入（Spectral Embedding）。
+  3. 计算嵌入空间中各点到质心的 L2 距离，输出这些距离的 L2 范数。
+- 物理意义：衡量采样样本在语义流形上的散落程度。
+
+### 3.11 `eigvalue`
+
+- 依赖：`sampling_stats` + `similarity_matrix_stats`
+- 实现：
+  $$
+  u=\sum_{i=1}^{K}(1-\lambda_i).
+  $$
+  其中 $\lambda_i$ 是归一化拉普拉斯矩阵 $L$ 的特征值。
+- 该指标等价于归一化亲和矩阵（Normalized Affinity Matrix）的特征值之和。
+
+### 3.12 `numset`
+
+- 依赖：`sampling_stats` + `similarity_matrix_stats`
+- 实现：
+  1. 根据阈值（`similarity_threshold`，默认 `0.5`）将 $W$ 二值化。
+  2. 统计生成的连通分支（Connected Components）数量。
+- 输出 $u$ 为连通分支总数。表示采样回答中存在多少个互不重叠的语义集合。
+
+## 4. 相似度矩阵提供者 (SimilarityMatrixProvider)
+
+负责构建 $W \in \mathbb{R}^{K \times K}$，支持以下模式：
+
+### 4.1 Jaccard 相似度
+- 简单的 Token 集重合度。
+
+### 4.2 NLI 相似度
+- **传统判别模型** (如 DeBERTa)：计算 Premise 与 Hypothesis 的推导关系。`affinity_mode` 决定如何从 Contradiction/Entailment 概率映射到边权重。
+- **生成式判别模型** (如 Generative Verifier)：通过提示主模型（或专用判别模型）判断回答是否“正确”或“等价”，提取 `True`/`False` 的 Logits 比例。
+- `nli_temperature` 用于平滑 NLI 模型的输出概率。
+
+## 5. 参数如何影响方法
 
 - `--num_samples` / `--sample_temperature` / `--sample_top_p`：
-  影响 `sampling_stats`，因此影响 `monte_carlo_sequence_entropy`、`lexical_similarity`、`eigenscore`。
+  影响 `sampling_stats`，因此影响 `monte_carlo_sequence_entropy`、`lexical_similarity`、`eigenscore` 以及所有依赖 `similarity_matrix_stats` 的图方法。
+- `--similarity_metric` / `--nli_model_path` / `--nli_affinity_mode`：
+  直接影响 $W$ 的构建质量。
+- `--similarity_threshold`：
+  特别针对 `numset` 方法，定义了“语义相同”的阈值。
 - `--lexical_metric`：仅影响 `lexical_similarity`。
 - `--p_true_with_context`：仅影响 `p_true` provider 的提示词（是否加入 `extra_context`）。
 - `--temperature` / `--top_p`：影响主回答 `a_model`，从而间接影响所有方法。
-- 当 `--temperature 0.0` 时主生成走贪心，`top_p` 在主生成中不会生效（代码只在 `do_sample=True` 时传入 `top_p`）。
 
-## 5. 一个最小调用示意
+## 6. 一个最小调用示意
 
 ```python
 from lukit.methods import create_method
@@ -153,9 +204,15 @@ engine = ExecutionEngine(
     model="/path/to/model",
     backend_config={"type": "huggingface", "device": "cuda:0"},
 )
-methods = [create_method("perplexity"), create_method("p_true", with_context=False)]
-records = engine.run([{"question": "What is 2+2?", "answer": "4"}], methods)
-print(records[0]["u"])
+# 使用 degree 方法并指定 NLI 相似度
+methods = [create_method("degree")]
+records = engine.run(
+    [{"question": "What is 2+2?"}], 
+    methods,
+    similarity_metric="nli",
+    nli_model_path="microsoft/deberta-large-mnli"
+)
+print(records[0]["u"]["degree"])
 ```
 
-`records[0]["u"]` 会包含每个方法的输出字典（例如 `{"perplexity": {"u": ...}, "p_true": {"u": ..., "p_true": ...}}`）。
+`records[0]["u"]` 会包含每个方法的输出字典。
