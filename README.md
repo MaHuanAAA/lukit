@@ -20,10 +20,10 @@ pip install -r requirements.txt
 - `lexical_similarity`
 - `p_true`
 - `eigenscore`
-- `eccentricity` (基于谱图理论映射质心范数距离)
-- `eigvalue` (基于归一化拉普拉斯矩阵的逆特征值和)
-- `numset` (连通分支数，基于相似度图聚类数)
-- `degree` (图散落度均值，即平均不一致度)
+- `eccentricity` 
+- `eigvalue` 
+- `numset`
+- `degree` 
 
 查看当前注册方法：
 
