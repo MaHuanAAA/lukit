@@ -5,9 +5,8 @@ import sys
 
 def _ensure_import_path() -> None:
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    repo_parent = os.path.dirname(repo_root)
-    if repo_parent not in sys.path:
-        sys.path.insert(0, repo_parent)
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
 
 
 def main() -> None:

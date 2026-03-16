@@ -1,0 +1,25 @@
+python scripts/run_lukit.py \
+  --gm_model_path meta-llama/Llama-3.1-8B-Instruct \
+  --gm_device cuda:4 \
+  --torch_dtype auto \
+  --chat_template_config ./configs/chat_template.json \
+  --dataset_source jsonl \
+  --dataset_dir /root/paddlejob/workspace/env_run/ueval/examples/augmented_benchmark \
+  --dataset_mode original \
+  --dataset_name all \
+  --start_idx 0 \
+  --num_samples_eval 0 \
+  --methods all \
+  --max_new_tokens 64 \
+  --temperature 0.0 \
+  --top_p 0.9 \
+  --num_samples 4 \
+  --sample_temperature 0.8 \
+  --sample_top_p 0.9 \
+  --lexical_metric rougeL \
+  --jm_model_path /root/paddlejob/workspace/env_run/ueval/examples/qwen3_merged_full_model \
+  --jm_device cuda:5 \
+  --judge_max_new_tokens 16 \
+  --judge_mode json \
+  --out_jsonl ./lukit_judged_qwen.jsonl \
+  --out_metrics ./lukit_judged_qwen_metrics.json

@@ -1,195 +1,207 @@
 # lukit
 
-`lukit` (LLM Uncertainty Kit) 用于评估 LLM 回答的不确定性（UQ），支持批量评测与判别（judge）。
+`lukit` (LLM Uncertainty Kit) 是一个用于评估 LLM 回答不确定性（UQ）的 Python 工具包，支持批量评测与判别（judge），并提供论文写作所需的 LaTeX 表格和 matplotlib 图片生成功能。
 
-## 1. 安装
+## 特性
+
+- **多方法支持**: 内置 12 种不确定性评估方法
+- **批量评测**: 支持 HuggingFace 和本地 JSONL 数据集
+- **自动判别**: 支持模型判别和启发式判别
+- **可视化输出**: 一键生成论文级 LaTeX 表格和 matplotlib 图片
+- **榜单展示**: 清晰展示各方法性能对比
+- **易扩展**: 简单的插件式方法注册机制
+
+## 安装
+
+### 从源码安装
 
 ```bash
-conda create -n lukit python=3.10
-conda activate lukit
-pip install -r requirements.txt
+git clone https://github.com/baidu/lukit.git
+cd lukit
+pip install -e .
 ```
 
-## 2. 当前支持的方法
+### 依赖要求
 
-- `sequence_log_probability`
-- `perplexity`
-- `mean_token_entropy`
-- `self_certainty`
-- `monte_carlo_sequence_entropy`
-- `lexical_similarity`
-- `p_true`
-- `eigenscore`
+- Python >= 3.8
+- PyTorch >= 2.0.0
+- Transformers >= 4.30.0
 
-查看当前注册方法：
+## 快速开始
+
+### 1. 列出可用方法
 
 ```bash
-python scripts/run_lukit.py --list-methods
+lukit list-methods
 ```
 
-## 3. 快速开始（CLI）
+输出:
+```
+Registered methods:
+- eigenscore [sampling,representation]
+- lexical_similarity [sampling,semantic]
+- mean_token_entropy [intrinsic]
+- monte_carlo_sequence_entropy [sampling]
+- perplexity [intrinsic]
+- p_true [interaction]
+- self_certainty [intrinsic]
+- sequence_log_probability [intrinsic]
+```
 
-运行时会自动显示两个进度条：`Generation`（生成+UQ）和 `Judge`（正确性判别）。
-
-全参数命令（显式，Qwen judge）：
+### 2. 运行评测
 
 ```bash
-python scripts/run_lukit.py \
-  --model_path /data1/chenjingdong/ms/meta-llama__Llama-3.1-8B-Instruct \
-  --device cuda:4 \
-  --torch_dtype auto \
-  --chat_template_config ./configs/chat_template.json \
-  --dataset_source jsonl \
-  --dataset_dir ./augmented_benchmark \
-  --dataset_mode original \
-  --dataset_name all \
-  --start_idx 0 \
-  --num_samples_eval 20 \
+lukit eval \
+  --gm_model_path /path/to/model \
+  --gm_device cuda:0 \
+  --dataset_name trivia_qa_split \
   --methods all \
-  --max_new_tokens 64 \
-  --temperature 0.0 \
-  --top_p 0.9 \
-  --num_samples 4 \
-  --sample_temperature 0.8 \
-  --sample_top_p 0.9 \
-  --lexical_metric rougeL \
-  --judge_model_path /data1/chenjingdong/ms/Qwen__Qwen3-4B-Instruct-2507 \
-  --judge_device cuda:5 \
-  --judge_max_new_tokens 16 \
-  --judge_mode json \
-  --out_jsonl ./lukit_judged_qwen.jsonl \
-  --out_metrics ./lukit_judged_qwen_metrics.json
+  --nli_model_path /path/to/nli-model \
+  --nli_device cuda:1 \
+  --num_samples_eval 100 \
+  --out_metrics ./metrics.json
 ```
 
-## 4. 参数说明
-
-可选开关（默认关闭）：
-
-- `--p_true_with_context`：启用 `p_true` 的上下文判别版本。
-
-独立命令（只列方法，不跑评测）：
+等价的独立命令仍然可用:
 
 ```bash
-python scripts/run_lukit.py --list-methods
+lukit-eval --gm_model_path /path/to/model --dataset_name trivia_qa_split --methods all
 ```
 
-参数逐一说明：
-
-- `--list-methods`：列出当前注册方法并退出。
-- `--model_path`：被评测生成模型路径（必填，除非使用 `--list-methods`）。
-- `--device`：生成模型设备；可选如 `cuda:0`、`cuda:1`、`cpu`。
-- `--torch_dtype`：生成模型 dtype；可选 `auto`、`float16`、`bfloat16`、`float32`。
-- `--chat_template_config`：生成 prompt 模板 JSON 路径（默认 `./configs/chat_template.json`）。
-- `--dataset_source`：数据源；可选 `hf` 或 `jsonl`。
-- `--dataset_dir`：本地 JSONL 目录（仅 `jsonl` 模式生效）。
-- `--dataset_mode`：JSONL 字段选择；可选 `original` 或 `augment`（仅 `jsonl` 生效）。
-- `--dataset_name`：数据集名称。
-- `--dataset_name`（`hf`）：`trivia_qa_split`、`simple_qa`。
-- `--dataset_name`（`jsonl`）：`chinese_simpleqa`、`hotpot_qa`、`nq_open`、`simpleqa_verified`、`triviaqa_validation`、`webqa`、`all`（扫描目录下全部 `.jsonl`）。
-- `--start_idx`：从第几个样本开始评测。
-- `--num_samples_eval`：本次评测样本数。
-- `--methods`：运行的方法；`all` 或逗号分隔列表（如 `p_true,mean_token_entropy`）。
-- `--max_new_tokens`：主模型单次生成的最大新 token 数。
-- `--temperature`：主模型生成温度；`0.0` 表示贪心解码。
-- `--top_p`：主模型 nucleus 采样阈值；通常与 `temperature > 0` 一起使用。
-- `--num_samples`：采样类方法的采样次数（如 lexical/sampling 类方法）。
-- `--sample_temperature`：采样类方法的温度。
-- `--sample_top_p`：采样类方法的 top-p。
-- `--lexical_metric`：`lexical_similarity` 使用的相似度指标；常用 `rougeL`、`rouge1`、`rouge2`、`BLEU`。
-- `--p_true_with_context`：布尔开关；写上即启用，不写即关闭。
-- `--judge_model_path`：judge 模型路径（你当前使用 Qwen：`/data1/chenjingdong/ms/Qwen__Qwen3-4B-Instruct-2507`）。
-- `--judge_device`：judge 模型设备；可与生成模型分卡运行。
-- `--judge_max_new_tokens`：judge 输出最大 token 数。
-- `--judge_mode`：judge 模式；`json`（JSON 优先解析）或 `chatglm`（ChatGLM 风格解析）。
-- `--out_jsonl`：逐样本输出文件路径。
-- `--out_metrics`：汇总指标输出文件路径。
-
-## 5. 生成 Prompt 模板配置
-
-生成阶段使用独立配置文件（默认）：`./configs/chat_template.json`
-
-格式如下：
-
-```json
-{
-  "messages": [
-    {"role": "system", "content": "You are a helpful assistant. Give a concise factual answer."},
-    {"role": "user", "content": "{question}"}
-  ]
-}
-```
-
-其中 `{question}` 会在运行时替换为样本问题。
-
-如果要指定其他模板文件：
+### 3. 查看榜单
 
 ```bash
-python scripts/run_lukit.py \
-  --model_path /path/to/model \
-  --chat_template_config /path/to/chat_template.json \
-  --methods all
+lukit-leaderboard ./metrics.json
 ```
 
-## 6. 输出文件
+输出示例:
+```
+============================================================
+LUKIT UNCERTAINTY METHOD LEADERBOARD
+============================================================
+Dataset: trivia_qa_split
+Source: hf
+Samples: 100
+============================================================
 
-- `--out_jsonl`：逐样本结果，包含 `q`、`a_gold`、`a_model`、`u`、`correct`、`judge_mode` 等。
-- `--out_metrics`：汇总指标，包含每个方法的 `n_valid`、`n_error`、`n_correct`、`auroc`、`auprc`。
++------+------------------------+--------+--------+----------+-------+---------+--------+
+| Rank | Method                 | AUROC  | AUPRC  | Accuracy | Valid | Correct | Errors |
++------+------------------------+--------+--------+----------+-------+---------+--------+
+| #1   | * p_true               | 0.8523 | 0.7891 | 0.6633   | 98    | 65      | 33     |
+| #2   | perplexity             | 0.8102 | 0.7543 | 0.6633   | 98    | 65      | 33     |
+| #3   | mean_token_entropy     | 0.7856 | 0.7234 | 0.6633   | 98    | 65      | 33     |
++------+------------------------+--------+--------+----------+-------+---------+--------+
+```
 
-## 7. Python API 示例
-
-`scripts/test_api.py` 是可直接运行的最小示例：
+### 4. 生成论文图表
 
 ```bash
-python scripts/test_api.py
+lukit-visualize \
+  --metrics ./metrics.json \
+  --output_dir ./paper_assets \
+  --table_type both \
+  --plot_type all \
+  --plot_format pdf
 ```
 
-核心调用方式：
+生成的文件:
+- `./paper_assets/uq_results.tex` - LaTeX 表格
+- `./paper_assets/uq_full_metrics.tex` - 完整指标 LaTeX 表格
+- `./paper_assets/uq_bar_plot_auroc.pdf` - 柱状图
+- `./paper_assets/uq_multi_plot.pdf` - 多指标对比图
+
+## Python API
+
+### 基本使用
 
 ```python
-from lukit.engine import ExecutionEngine
-from lukit.methods import create_method
+from lukit import ExecutionEngine, create_method
 
+# 创建引擎
 engine = ExecutionEngine(
-    model="/data1/chenjingdong/ms/meta-llama__Llama-3.1-8B-Instruct",
-    backend_config={"type": "huggingface", "device": "cuda:4"},
+    model="/path/to/model",
+    backend_config={"device": "cuda:0"}
 )
+
+# 创建方法
 method = create_method("p_true")
-record = engine.run_single(prompt="What is 2+2?", method=method, max_new_tokens=32)
 
-print(record["a_model"])
-print(record["u"]["p_true"])
+# 单样本评测
+record = engine.run_single(
+    prompt="What is 2+2?",
+    method=method,
+    max_new_tokens=32
+)
+
+print(f"Answer: {record['a_model']}")
+print(f"Uncertainty: {record['u']['p_true']['u']}")
 ```
 
-## 8. 目录
-
-```text
-lukit/
-├── backends/                  # 模型后端实现（当前是 HuggingFace）
-├── data_providers/            # 声明式数据提供者（如 logprob/sampling）
-├── methods/                   # 各种 UQ 方法实现与注册
-├── engine/                    # 调度与执行主流程
-├── cli/                       # 命令行参数与主入口逻辑
-├── configs/chat_template.json # 生成 prompt 模板配置
-└── scripts/
-    ├── run_lukit.py           # CLI 入口脚本
-    └── test_api.py            # Python API 最小示例
-```
-
-## 9. 如何新增一个方法
-
-新增方法推荐按下面 4 步：
-
-1. 在 `methods/` 新建方法文件（例如 `methods/my_method.py`），继承 `UncertaintyMethod`。
-2. 声明方法名和依赖数据（`name`、`requires_data`），实现 `_compute(stats)` 并返回 `{"u": float}`。
-3. 在 `methods/__init__.py` 的 `_METHOD_MODULES` 中注册模块名（例如 `"my_method"`）。
-4. 用 CLI 做最小验证：`--methods my_method --num_samples_eval 2`。
-
-最小模板：
+### 批量评测
 
 ```python
-import numpy as np
-from .base_method import UncertaintyMethod
+from lukit import ExecutionEngine, create_method, list_methods
 
+# 准备数据
+dataset = [
+    {"question": "What is 2+2?", "answer": "4"},
+    {"question": "Capital of Japan?", "answer": "Tokyo"},
+]
+
+# 创建所有方法
+methods = [create_method(name) for name in list_methods()]
+
+# 运行评测
+records = engine.run(
+    dataset=dataset,
+    methods=methods,
+    max_new_tokens=64
+)
+```
+
+### 生成可视化
+
+```python
+from lukit.visualization import LatexTableGenerator, PlotGenerator, load_metrics
+
+# 加载评测结果
+metrics = load_metrics("./metrics.json")
+
+# 生成 LaTeX 表格
+latex_gen = LatexTableGenerator(metrics)
+latex_table = latex_gen.generate_performance_table(sort_by="auroc")
+latex_gen.save_to_file(latex_table, "./results.tex")
+
+# 生成 matplotlib 图片
+plot_gen = PlotGenerator(metrics)
+fig = plot_gen.generate_bar_comparison_plot(metric="auroc")
+plot_gen.save_figure(fig, "./figure1.pdf", dpi=300)
+```
+
+## 支持的方法
+
+| 方法 | 描述 | 类型 | 需要采样 |
+|------|------|------|----------|
+| `sequence_log_probability` | 生成序列的对数概率 | 内在 | 否 |
+| `perplexity` | 生成文本的困惑度 | 内在 | 否 |
+| `mean_token_entropy` | Token 平均熵 | 内在 | 否 |
+| `self_certainty` | 自确定性分数 | 内在 | 否 |
+| `monte_carlo_sequence_entropy` | 蒙特卡洛序列熵 | 采样 | 是 |
+| `lexical_similarity` | 采样响应间的词汇相似度 | 采样 | 是 |
+| `p_true` | 回答为真的概率 | 交互式 | 否 |
+| `eigenscore` | 基于采样表示的特征值分数 | 表征 | 是 |
+| `deg_mat` | 基于回答图平均度的语义图方法 | 图方法 | 是 |
+| `eccentricity` | 基于图拉普拉斯谱嵌入离散度的语义图方法 | 图方法 | 是 |
+| `eig_val_laplacian` | 基于图拉普拉斯特征值和的语义图方法 | 图方法 | 是 |
+| `num_sem_sets` | 基于语义连通分量个数的语义图方法 | 图方法 | 是 |
+
+## 添加自定义方法
+
+1. 在 `lukit/methods/` 创建新文件:
+
+```python
+# lukit/methods/my_method.py
+from .base_method import UncertaintyMethod
 
 class MyMethod(UncertaintyMethod):
     name = "my_method"
@@ -197,10 +209,160 @@ class MyMethod(UncertaintyMethod):
     tags = ["intrinsic"]
 
     def _compute(self, stats):
-        x = np.asarray(stats["logprob_stats"]["completion_log_probs"], dtype=np.float64)
-        if x.size == 0:
+        logprobs = stats["logprob_stats"]["completion_log_probs"]
+        if not logprobs:
             return {"u": 0.0}
-        return {"u": float(-x.mean())}
+        return {"u": float(-sum(logprobs) / len(logprobs))}
 ```
 
-如果现有 `stats` 不够用，再在 `data_providers/` 新增 provider，并在 `data_providers/__init__.py` 注册。
+2. 在 `lukit/methods/__init__.py` 注册:
+
+```python
+_METHOD_MODULES = [
+    # ... existing methods
+    "my_method",
+]
+```
+
+3. 验证:
+
+```bash
+lukit list-methods
+```
+
+## 项目结构
+
+```
+lukit/
+├── lukit/                    # 主包
+│   ├── backends/             # 模型后端实现
+│   ├── bin/                  # CLI 可执行脚本
+│   ├── cli/                  # 命令行接口
+│   ├── data_providers/       # 数据提供者
+│   ├── engine/               # 执行引擎
+│   ├── methods/              # 不确定性方法
+│   └── visualization/        # 可视化工具
+├── configs/                  # 配置文件
+│   └── chat_template.json    # 生成 prompt 模板
+├── pyproject.toml            # 包配置
+└── README.md                 # 本文档
+```
+
+## CLI 命令参考
+
+### lukit
+
+统一 CLI，支持以下子命令:
+
+```bash
+lukit list-methods
+lukit eval --gm_model_path <path> --dataset_name <name> --methods all
+lukit leaderboard <metrics_path> --sort_by auroc
+lukit visualize --metrics <path> --output_dir <dir> --plot_type all
+```
+
+`lukit --list-methods`、`--model_path`、`--device`、`--judge_model_path`、`--judge_device` 也保留兼容。
+
+### lukit-eval
+
+运行不确定性评测。它与 `lukit eval` 使用同一套批量评测参数。
+
+```bash
+lukit-eval \
+  --gm_model_path <path>       # 生成模型路径 (必填)
+  --gm_device <device>         # 生成模型设备 (默认: cuda:0)
+  --jm_model_path <path>       # judge 模型路径
+  --jm_device <device>         # judge 模型设备 (默认: cuda:1)
+  --semantic_similarity_score <mode>  # nli/jaccard
+  --semantic_affinity <mode>   # entail/contra
+  --nli_model_path <path>      # NLI 模型路径（nli 模式必填）
+  --nli_device <device>        # NLI 模型设备
+  --dataset_name <name>        # 数据集名称
+  --methods <methods>          # 方法列表 (默认: all)
+  --num_samples_eval <n>       # 评测样本数
+  --out_jsonl <path>           # 结果 JSONL 输出路径
+  --out_metrics <path>         # 指标 JSON 输出路径
+```
+
+### lukit-leaderboard
+
+显示结果榜单。
+
+```bash
+lukit-leaderboard <metrics_path> \
+  --sort_by <metric>           # 排序指标 (auroc/auprc/accuracy)
+```
+
+### lukit-visualize
+
+生成 LaTeX 表格和 matplotlib 图片。
+
+```bash
+lukit-visualize \
+  --metrics <path>             # 指标文件路径 (必填)
+  --output_dir <dir>           # 输出目录
+  --table_type <type>          # 表格类型 (performance/full/both/none)
+  --plot_type <type>           # 图片类型 (none/bar/multi/all)
+  --plot_format <format>       # 图片格式 (png/pdf/svg)
+  --bar_metric <metric>        # 单图指标 (auroc/auprc/accuracy)
+  --multi_metrics <a,b>        # 组合图指标列表
+```
+
+## 输出文件格式
+
+### metrics.json
+
+```json
+{
+  "dataset_name": "trivia_qa_split",
+  "dataset_source": "hf",
+  "num_samples_eval": 100,
+  "methods": ["p_true", "perplexity", ...],
+  "metrics": {
+    "p_true": {
+      "auroc": 0.8523,
+      "auprc": 0.7891,
+      "n_valid": 98,
+      "n_correct": 65,
+      "n_error": 33
+    }
+  }
+}
+```
+
+### results.jsonl
+
+每行一个 JSON 对象:
+
+```json
+{
+  "sample_idx": 0,
+  "q": "Question text",
+  "a_gold": "Ground truth",
+  "a_model": "Model answer",
+  "u": {"p_true": {"u": 0.85}, "perplexity": {"u": 12.3}},
+  "correct": 1,
+  "judge_mode": "json"
+}
+```
+
+## 许可证
+
+Apache License 2.0
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+## 引用
+
+如果您在研究中使用了 LUKIT，请引用:
+
+```bibtex
+@software{lukit2024,
+  title = {LUKIT: LLM Uncertainty Kit},
+  author = {LUKIT Contributors},
+  year = {2024},
+  url = {https://github.com/baidu/lukit}
+}
+```

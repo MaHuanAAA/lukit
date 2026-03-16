@@ -1,0 +1,76 @@
+{
+  "dataset_source": "hf",
+  "dataset_name": "trivia_qa_split",
+  "dataset_mode": null,
+  "dataset_dir": null,
+  "start_idx": 0,
+  "num_samples_eval": 10,
+  "methods": [
+    "eigenscore",
+    "lexical_similarity",
+    "mean_token_entropy",
+    "monte_carlo_sequence_entropy",
+    "p_true",
+    "perplexity",
+    "self_certainty",
+    "sequence_log_probability"
+  ],
+  "metrics": {
+    "eigenscore": {
+      "n_valid": 10,
+      "n_error": 3,
+      "n_correct": 7,
+      "auroc": 0.7142857142857143,
+      "auprc": 0.7777777777777777
+    },
+    "lexical_similarity": {
+      "n_valid": 10,
+      "n_error": 3,
+      "n_correct": 7,
+      "auroc": 0.7619047619047619,
+      "auprc": 0.7916666666666666
+    },
+    "mean_token_entropy": {
+      "n_valid": 10,
+      "n_error": 3,
+      "n_correct": 7,
+      "auroc": 0.8571428571428572,
+      "auprc": 0.7555555555555555
+    },
+    "monte_carlo_sequence_entropy": {
+      "n_valid": 10,
+      "n_error": 3,
+      "n_correct": 7,
+      "auroc": 0.9047619047619049,
+      "auprc": 0.8055555555555556
+    },
+    "p_true": {
+      "n_valid": 10,
+      "n_error": 3,
+      "n_correct": 7,
+      "auroc": 0.5238095238095238,
+      "auprc": 0.5666666666666667
+    },
+    "perplexity": {
+      "n_valid": 10,
+      "n_error": 3,
+      "n_correct": 7,
+      "auroc": 0.8095238095238095,
+      "auprc": 0.7222222222222222
+    },
+    "self_certainty": {
+      "n_valid": 10,
+      "n_error": 3,
+      "n_correct": 7,
+      "auroc": 0.9047619047619049,
+      "auprc": 0.8055555555555556
+    },
+    "sequence_log_probability": {
+      "n_valid": 10,
+      "n_error": 3,
+      "n_correct": 7,
+      "auroc": 0.8095238095238095,
+      "auprc": 0.7222222222222222
+    }
+  }
+}
