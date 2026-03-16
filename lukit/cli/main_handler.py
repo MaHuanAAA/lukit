@@ -9,8 +9,8 @@ from typing import Dict, List, Optional
 from ..backends import HFBackend
 from ..engine import ExecutionEngine
 from ..methods import METHOD_REGISTRY, create_method, list_methods
-from ..methods.semantic_graph_utils import canonicalize_affinity
 from ..progress import wrap_progress
+from .eval_config import EvalConfig, JudgeConfig
 
 _DTYPE_MAP = {
     "float16": "float16",
@@ -34,23 +34,23 @@ _JSONL_DATASET_NAMES = {
     "triviaqa_validation",
     "webqa",
 }
-_SEMANTIC_GRAPH_METHODS = {
-    "deg_mat",
-    "eccentricity",
-    "eig_val_laplacian",
-    "num_sem_sets",
-}
-_SEMANTIC_ENTROPY_METHODS = {
-    "semantic_entropy",
-    "semantic_entropy_empirical",
-}
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="lukit batch evaluation CLI.")
-    parser.add_argument("--list-methods", action="store_true", help="List all registered UQ methods.")
+    action_group = parser.add_argument_group("Actions")
+    generation_group = parser.add_argument_group("Generation")
+    dataset_group = parser.add_argument_group("Dataset")
+    method_group = parser.add_argument_group("Methods")
+    sampling_group = parser.add_argument_group("Sampling Family")
+    semantic_graph_group = parser.add_argument_group("Semantic Graph Family")
+    semantic_entropy_group = parser.add_argument_group("Semantic Entropy Family")
+    judge_group = parser.add_argument_group("Judge")
+    output_group = parser.add_argument_group("Output")
 
-    parser.add_argument(
+    action_group.add_argument("--list-methods", action="store_true", help="List all registered UQ methods.")
+
+    generation_group.add_argument(
         "--gm_model_path",
         "--model_path",
         dest="gm_model_path",
@@ -58,7 +58,7 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Generation model path. Alias: --model_path",
     )
-    parser.add_argument(
+    generation_group.add_argument(
         "--gm_device",
         "--device",
         dest="gm_device",
@@ -66,15 +66,15 @@ def parse_args() -> argparse.Namespace:
         default="cuda:0",
         help="Generation model device. Alias: --device",
     )
-    parser.add_argument("--torch_dtype", type=str, default="auto")
-    parser.add_argument(
+    generation_group.add_argument("--torch_dtype", type=str, default="auto")
+    generation_group.add_argument(
         "--chat_template_config",
         type=str,
         default="./configs/chat_template.json",
         help="Path to chat template config JSON for generation prompts.",
     )
 
-    parser.add_argument(
+    dataset_group.add_argument(
         "--dataset_name",
         type=str,
         default="trivia_qa_split",
@@ -84,116 +84,126 @@ def parse_args() -> argparse.Namespace:
             "simpleqa_verified/triviaqa_validation/webqa/all(all scans dataset_dir/*.jsonl)"
         ),
     )
-    parser.add_argument(
+    dataset_group.add_argument(
         "--dataset_source",
         type=str,
         default="hf",
         choices=["hf", "jsonl"],
         help="Dataset source backend.",
     )
-    parser.add_argument(
+    dataset_group.add_argument(
         "--dataset_mode",
         type=str,
         default="original",
         choices=["original", "augment"],
         help="Only used when --dataset_source jsonl.",
     )
-    parser.add_argument(
+    dataset_group.add_argument(
         "--dataset_dir",
         type=str,
         default="./augmented_benchmark",
         help="Folder containing jsonl datasets when --dataset_source jsonl.",
     )
-    parser.add_argument("--start_idx", type=int, default=0)
-    parser.add_argument("--num_samples_eval", type=int, default=100)
+    dataset_group.add_argument("--start_idx", type=int, default=0)
+    dataset_group.add_argument(
+        "--num_samples_eval",
+        type=int,
+        default=100,
+        help="Number of samples to evaluate. Use -1 to evaluate all remaining samples.",
+    )
 
-    parser.add_argument("--methods", type=str, default="all")
-    parser.add_argument("--max_new_tokens", type=int, default=64)
-    parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--top_p", type=float, default=0.9)
+    method_group.add_argument(
+        "--methods",
+        type=str,
+        default="all",
+        help="Comma-separated method names, or 'all'.",
+    )
+    method_group.add_argument("--max_new_tokens", type=int, default=64)
+    method_group.add_argument("--temperature", type=float, default=0.0)
+    method_group.add_argument("--top_p", type=float, default=0.9)
 
-    parser.add_argument("--num_samples", type=int, default=4)
-    parser.add_argument("--sample_temperature", type=float, default=0.8)
-    parser.add_argument("--sample_top_p", type=float, default=0.9)
-    parser.add_argument("--lexical_metric", type=str, default="rougeL")
-    parser.add_argument("--p_true_with_context", action="store_true")
-    parser.add_argument(
+    sampling_group.add_argument("--num_samples", type=int, default=4)
+    sampling_group.add_argument("--sample_temperature", type=float, default=0.8)
+    sampling_group.add_argument("--sample_top_p", type=float, default=0.9)
+    sampling_group.add_argument("--lexical_metric", type=str, default="rougeL")
+    sampling_group.add_argument("--p_true_with_context", action="store_true")
+    semantic_graph_group.add_argument(
         "--semantic_similarity_score",
         type=str,
         default="nli",
         choices=["nli", "jaccard"],
         help="Shared similarity source for semantic graph methods.",
     )
-    parser.add_argument(
+    semantic_graph_group.add_argument(
         "--semantic_affinity",
         type=str,
         default="disagreement_w",
         choices=["disagreement_w", "agreement_w", "contra", "entail"],
         help="Shared NLI affinity mode for semantic graph methods; contra/entail are kept as aliases.",
     )
-    parser.add_argument(
+    semantic_graph_group.add_argument(
         "--semantic_temperature",
         type=float,
         default=3.0,
         help="Temperature used to turn NLI logits into probabilities for graph affinities.",
     )
-    parser.add_argument(
+    semantic_graph_group.add_argument(
         "--semantic_jaccard_threshold",
         type=float,
         default=0.5,
         help="Edge threshold used by num_sem_sets when semantic_similarity_score=jaccard.",
     )
-    parser.add_argument(
+    semantic_entropy_group.add_argument(
         "--semantic_class_source",
         type=str,
         default="nli",
         choices=["nli", "equivalence_judger"],
         help="Semantic class source used by semantic entropy methods.",
     )
-    parser.add_argument(
+    semantic_graph_group.add_argument(
         "--nli_model_path",
         type=str,
         default="",
         help="NLI model path used when semantic_similarity_score=nli.",
     )
-    parser.add_argument(
+    semantic_graph_group.add_argument(
         "--nli_device",
         type=str,
         default="cuda:2",
         help="Device for the NLI model when semantic_similarity_score=nli.",
     )
-    parser.add_argument(
+    semantic_graph_group.add_argument(
         "--nli_torch_dtype",
         type=str,
         default="auto",
         help="Torch dtype for the NLI model.",
     )
-    parser.add_argument(
+    semantic_entropy_group.add_argument(
         "--equivalence_judger_model_path",
         type=str,
         default="",
         help="Model path for the semantic equivalence judger used by semantic entropy.",
     )
-    parser.add_argument(
+    semantic_entropy_group.add_argument(
         "--equivalence_judger_device",
         type=str,
         default="cuda:0",
         help="Device for the semantic equivalence judger.",
     )
-    parser.add_argument(
+    semantic_entropy_group.add_argument(
         "--equivalence_judger_torch_dtype",
         type=str,
         default="auto",
         help="Torch dtype for the semantic equivalence judger.",
     )
-    parser.add_argument(
+    semantic_entropy_group.add_argument(
         "--equivalence_judger_max_new_tokens",
         type=int,
         default=16,
         help="Max new tokens for semantic equivalence judger decoding.",
     )
 
-    parser.add_argument(
+    judge_group.add_argument(
         "--jm_model_path",
         "--judge_model_path",
         dest="jm_model_path",
@@ -201,7 +211,7 @@ def parse_args() -> argparse.Namespace:
         default=_DEFAULT_JSON_JUDGE_MODEL_PATH,
         help="Judge model path. Alias: --judge_model_path",
     )
-    parser.add_argument(
+    judge_group.add_argument(
         "--jm_device",
         "--judge_device",
         dest="jm_device",
@@ -209,16 +219,16 @@ def parse_args() -> argparse.Namespace:
         default="cuda:1",
         help="Judge model device. Alias: --judge_device",
     )
-    parser.add_argument("--judge_max_new_tokens", type=int, default=16)
-    parser.add_argument(
+    judge_group.add_argument("--judge_max_new_tokens", type=int, default=16)
+    judge_group.add_argument(
         "--judge_mode",
         type=str,
         default="json",
         choices=["json", "chatglm"],
         help="Judge mode: json uses strict JSON prompt; chatglm uses reasoning-style prompt.",
     )
-    parser.add_argument("--out_jsonl", type=str, default="./results_lukit.jsonl")
-    parser.add_argument("--out_metrics", type=str, default="./metrics_lukit.json")
+    output_group.add_argument("--out_jsonl", type=str, default="./results_lukit.jsonl")
+    output_group.add_argument("--out_metrics", type=str, default="./metrics_lukit.json")
     return parser.parse_args()
 
 
@@ -247,7 +257,10 @@ def load_dataset_split(dataset_name: str, start_idx: int, num_samples: int) -> L
             "Supported: trivia_qa_split, simple_qa"
         )
 
-    end_idx = min(start_idx + num_samples, len(split))
+    if num_samples < 0:
+        end_idx = len(split)
+    else:
+        end_idx = min(start_idx + num_samples, len(split))
     records = []
     for idx in range(start_idx, end_idx):
         sample = split[idx]
@@ -398,7 +411,10 @@ def load_jsonl_dataset(
     if not records_all:
         raise ValueError("No jsonl records loaded from dataset_dir.")
 
-    end_idx = min(start_idx + num_samples, len(records_all))
+    if num_samples < 0:
+        end_idx = len(records_all)
+    else:
+        end_idx = min(start_idx + num_samples, len(records_all))
     records = records_all[start_idx:end_idx]
     for idx, record in enumerate(records, start=start_idx):
         record["sample_idx"] = idx
@@ -430,29 +446,10 @@ def load_input_dataset(
     )
 
 
-def build_methods(args: argparse.Namespace):
-    selected = [item.strip() for item in args.methods.split(",") if item.strip()]
-    if not selected or selected == ["all"]:
-        selected = list_methods()
-
-    built = []
-    for name in selected:
-        if name not in METHOD_REGISTRY:
-            raise KeyError(f"Unknown method: {name}")
-        kwargs = {}
-        if name == "lexical_similarity":
-            kwargs["metric"] = args.lexical_metric
-        elif name == "p_true":
-            kwargs["with_context"] = args.p_true_with_context
-        elif name in _SEMANTIC_GRAPH_METHODS:
-            kwargs["similarity_score"] = args.semantic_similarity_score
-            kwargs["affinity"] = canonicalize_affinity(args.semantic_affinity)
-            kwargs["temperature"] = args.semantic_temperature
-            kwargs["jaccard_threshold"] = args.semantic_jaccard_threshold
-        elif name in _SEMANTIC_ENTROPY_METHODS:
-            kwargs["semantic_class_source"] = args.semantic_class_source
-        built.append(create_method(name, **kwargs))
-    return built
+def build_methods(config: EvalConfig):
+    selected = config.selected_method_names()
+    config.validate_for_methods(selected)
+    return [create_method(name, **config.method_kwargs(name)) for name in selected]
 
 
 def safe_float(value):
@@ -593,7 +590,7 @@ def parse_chatglm_judge_response(text: str) -> Optional[int]:
 
 
 class ChatGLMJudgeRunner:
-    def __init__(self, args: argparse.Namespace) -> None:
+    def __init__(self, config: JudgeConfig) -> None:
         if _CHATGLM_HTTP_PROXY:
             os.environ["http_proxy"] = _CHATGLM_HTTP_PROXY
         if _CHATGLM_HTTPS_PROXY:
@@ -613,17 +610,17 @@ class ChatGLMJudgeRunner:
         )
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            args.jm_model_path,
+            config.model_path,
             trust_remote_code=True,
         )
         self.model = AutoModel.from_pretrained(
-            args.jm_model_path,
+            config.model_path,
             trust_remote_code=True,
             torch_dtype=torch_dtype,
         )
-        self.model.to(args.jm_device)
+        self.model.to(config.device)
         self.model.eval()
-        self.max_new_tokens = args.judge_max_new_tokens
+        self.max_new_tokens = config.max_new_tokens
 
     def judge(self, question: str, ground_truth: str, answer: str) -> str:
         prompt = build_chatglm_judge_prompt(
@@ -668,10 +665,10 @@ def heuristic_correct(record: Dict) -> int:
 
 def annotate_correctness(
     records: List[Dict],
-    args: argparse.Namespace,
+    judge_config: JudgeConfig,
     show_progress: bool = True,
 ) -> None:
-    if not args.jm_model_path:
+    if not judge_config.model_path:
         record_iter = records
         if show_progress:
             record_iter = wrap_progress(
@@ -684,8 +681,8 @@ def annotate_correctness(
             record["judge_mode"] = "heuristic"
         return
 
-    if args.judge_mode == "chatglm":
-        judge_runner = ChatGLMJudgeRunner(args)
+    if judge_config.mode == "chatglm":
+        judge_runner = ChatGLMJudgeRunner(judge_config)
         record_iter = records
         if show_progress:
             record_iter = wrap_progress(
@@ -708,8 +705,8 @@ def annotate_correctness(
         return
 
     judge_backend = HFBackend(
-        model=args.jm_model_path,
-        device=args.jm_device,
+        model=judge_config.model_path,
+        device=judge_config.device,
         torch_dtype=_JSON_JUDGE_TORCH_DTYPE,
     )
     record_iter = records
@@ -727,7 +724,7 @@ def annotate_correctness(
         )
         raw = judge_backend.generate_from_messages(
             prompt,
-            max_new_tokens=args.judge_max_new_tokens,
+            max_new_tokens=judge_config.max_new_tokens,
             temperature=0.0,
             top_p=1.0,
         )
@@ -766,89 +763,50 @@ def print_methods() -> None:
 
 def main() -> None:
     args = parse_args()
-    if args.list_methods:
+    config = EvalConfig.from_args(args)
+    if config.list_methods_flag:
         print_methods()
         return
 
-    if not args.gm_model_path:
+    if not config.generation.model_path:
         raise ValueError("--gm_model_path is required unless --list-methods is used.")
 
-    methods = build_methods(args)
+    methods = build_methods(config)
     method_names = [method.name for method in methods]
-    if any(name in _SEMANTIC_GRAPH_METHODS for name in method_names):
-        if args.semantic_similarity_score == "nli" and not args.nli_model_path:
-            raise ValueError(
-                "--nli_model_path is required when semantic graph methods use "
-                "--semantic_similarity_score nli."
-            )
-    if any(name in _SEMANTIC_ENTROPY_METHODS for name in method_names):
-        if args.semantic_class_source == "nli" and not args.nli_model_path:
-            raise ValueError(
-                "--nli_model_path is required when semantic entropy uses "
-                "--semantic_class_source nli."
-            )
-        if args.semantic_class_source == "equivalence_judger" and not args.equivalence_judger_model_path:
-            raise ValueError(
-                "--equivalence_judger_model_path is required when semantic entropy uses "
-                "--semantic_class_source equivalence_judger."
-            )
     dataset = load_input_dataset(
-        dataset_source=args.dataset_source,
-        dataset_name=args.dataset_name,
-        dataset_mode=args.dataset_mode,
-        dataset_dir=args.dataset_dir,
-        start_idx=args.start_idx,
-        num_samples=args.num_samples_eval,
+        dataset_source=config.dataset.source,
+        dataset_name=config.dataset.name,
+        dataset_mode=config.dataset.mode,
+        dataset_dir=config.dataset.directory,
+        start_idx=config.dataset.start_idx,
+        num_samples=config.dataset.num_samples_eval,
     )
 
     engine = ExecutionEngine(
-        model=args.gm_model_path,
-        backend_config={
-            "type": "huggingface",
-            "device": args.gm_device,
-            "torch_dtype": args.torch_dtype,
-            "chat_template_config": args.chat_template_config,
-        },
+        model=config.generation.model_path,
+        backend_config=config.generation.backend_config(),
     )
 
     records = engine.run(
         dataset=dataset,
         methods=methods,
-        max_new_tokens=args.max_new_tokens,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        num_samples=args.num_samples,
-        sample_temperature=args.sample_temperature,
-        sample_top_p=args.sample_top_p,
-        p_true_with_context=args.p_true_with_context,
-        semantic_similarity_score=args.semantic_similarity_score,
-        semantic_affinity=canonicalize_affinity(args.semantic_affinity),
-        semantic_temperature=args.semantic_temperature,
-        semantic_jaccard_threshold=args.semantic_jaccard_threshold,
-        semantic_class_source=args.semantic_class_source,
-        nli_model_path=args.nli_model_path,
-        nli_device=args.nli_device,
-        nli_torch_dtype=args.nli_torch_dtype,
-        equivalence_judger_model_path=args.equivalence_judger_model_path,
-        equivalence_judger_device=args.equivalence_judger_device,
-        equivalence_judger_torch_dtype=args.equivalence_judger_torch_dtype,
-        equivalence_judger_max_new_tokens=args.equivalence_judger_max_new_tokens,
+        **config.runtime_kwargs(),
         show_progress=True,
         progress_desc="Generation",
     )
 
-    annotate_correctness(records, args, show_progress=True)
+    annotate_correctness(records, config.judge, show_progress=True)
     metrics = compute_au_metrics(records, method_names)
 
-    save_jsonl(args.out_jsonl, records)
+    save_jsonl(config.output.out_jsonl, records)
     save_json(
-        args.out_metrics,
+        config.output.out_metrics,
         {
-            "dataset_source": args.dataset_source,
-            "dataset_name": args.dataset_name,
-            "dataset_mode": args.dataset_mode if args.dataset_source == "jsonl" else None,
-            "dataset_dir": args.dataset_dir if args.dataset_source == "jsonl" else None,
-            "start_idx": args.start_idx,
+            "dataset_source": config.dataset.source,
+            "dataset_name": config.dataset.name,
+            "dataset_mode": config.dataset.mode if config.dataset.source == "jsonl" else None,
+            "dataset_dir": config.dataset.directory if config.dataset.source == "jsonl" else None,
+            "start_idx": config.dataset.start_idx,
             "num_samples_eval": len(records),
             "methods": method_names,
             "metrics": metrics,
@@ -859,8 +817,8 @@ def main() -> None:
         json.dumps(
             {
                 "n_records": len(records),
-                "out_jsonl": args.out_jsonl,
-                "out_metrics": args.out_metrics,
+                "out_jsonl": config.output.out_jsonl,
+                "out_metrics": config.output.out_metrics,
             },
             ensure_ascii=False,
             indent=2,

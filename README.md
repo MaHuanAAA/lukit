@@ -4,7 +4,7 @@
 
 ## 特性
 
-- **多方法支持**: 内置 12 种不确定性评估方法
+- **多方法支持**: 内置 14 种不确定性评估方法
 - **批量评测**: 支持 HuggingFace 和本地 JSONL 数据集
 - **自动判别**: 支持模型判别和启发式判别
 - **可视化输出**: 一键生成论文级 LaTeX 表格和 matplotlib 图片
@@ -38,13 +38,19 @@ lukit list-methods
 输出:
 ```
 Registered methods:
+- deg_mat [sampling,semantic,graph]
+- eccentricity [sampling,semantic,graph,spectral]
+- eig_val_laplacian [sampling,semantic,graph,spectral]
 - eigenscore [sampling,representation]
 - lexical_similarity [sampling,semantic]
 - mean_token_entropy [intrinsic]
 - monte_carlo_sequence_entropy [sampling]
-- perplexity [intrinsic]
+- num_sem_sets [sampling,semantic,graph,discrete]
 - p_true [interaction]
+- perplexity [intrinsic]
 - self_certainty [intrinsic]
+- semantic_entropy [sampling,semantic,entropy]
+- semantic_entropy_empirical [sampling,semantic,entropy]
 - sequence_log_probability [intrinsic]
 ```
 
@@ -56,6 +62,7 @@ lukit eval \
   --gm_device cuda:0 \
   --dataset_name trivia_qa_split \
   --methods all \
+  --num_samples 4 \
   --nli_model_path /path/to/nli-model \
   --nli_device cuda:1 \
   --num_samples_eval 100 \
@@ -67,6 +74,30 @@ lukit eval \
 ```bash
 lukit-eval --gm_model_path /path/to/model --dataset_name trivia_qa_split --methods all
 ```
+
+完整的命令行参数可以通过以下命令查看：
+
+```bash
+lukit eval --help
+```
+
+`lukit eval` 的参数现在按用途分组展示，便于区分通用参数和方法族参数：
+
+- `Generation`: 生成模型与解码参数，如 `--gm_model_path`、`--gm_device`、`--max_new_tokens`
+- `Dataset`: 数据来源与采样范围，如 `--dataset_source`、`--dataset_name`、`--num_samples_eval`
+- `Methods`: 方法选择与通用生成控制，如 `--methods`、`--temperature`、`--top_p`
+- `Sampling Family`: 所有依赖多次采样的方法共享，如 `--num_samples`、`--sample_temperature`、`--lexical_metric`、`--p_true_with_context`
+- `Semantic Graph Family`: `deg_mat`、`eccentricity`、`eig_val_laplacian`、`num_sem_sets` 共享，如 `--semantic_similarity_score`、`--semantic_affinity`、`--nli_model_path`
+- `Semantic Entropy Family`: `semantic_entropy`、`semantic_entropy_empirical` 共享，如 `--semantic_class_source`、`--equivalence_judger_model_path`
+- `Judge`: 正确性判别相关，如 `--jm_model_path`、`--judge_mode`
+- `Output`: 输出路径，如 `--out_jsonl`、`--out_metrics`
+
+常见约束：
+
+- `--num_samples_eval -1` 表示从 `--start_idx` 开始评估剩余全部样本
+- 使用 semantic graph 方法且 `--semantic_similarity_score nli` 时，需要提供 `--nli_model_path`
+- 使用 semantic entropy 方法且 `--semantic_class_source nli` 时，需要提供 `--nli_model_path`
+- 使用 semantic entropy 方法且 `--semantic_class_source equivalence_judger` 时，需要提供 `--equivalence_judger_model_path`
 
 ### 3. 查看榜单
 
@@ -269,19 +300,42 @@ lukit visualize --metrics <path> --output_dir <dir> --plot_type all
 
 ```bash
 lukit-eval \
-  --gm_model_path <path>       # 生成模型路径 (必填)
-  --gm_device <device>         # 生成模型设备 (默认: cuda:0)
-  --jm_model_path <path>       # judge 模型路径
-  --jm_device <device>         # judge 模型设备 (默认: cuda:1)
-  --semantic_similarity_score <mode>  # nli/jaccard
-  --semantic_affinity <mode>   # entail/contra
-  --nli_model_path <path>      # NLI 模型路径（nli 模式必填）
-  --nli_device <device>        # NLI 模型设备
-  --dataset_name <name>        # 数据集名称
-  --methods <methods>          # 方法列表 (默认: all)
-  --num_samples_eval <n>       # 评测样本数
-  --out_jsonl <path>           # 结果 JSONL 输出路径
-  --out_metrics <path>         # 指标 JSON 输出路径
+  --gm_model_path <path> \
+  --dataset_name <name> \
+  --methods all
+```
+
+建议直接用 `lukit eval --help` 查看完整参数列表。帮助信息会按以下分组展示：
+
+- `Generation`: `--gm_model_path` `--gm_device` `--torch_dtype` `--chat_template_config`
+- `Dataset`: `--dataset_source` `--dataset_name` `--dataset_mode` `--dataset_dir` `--start_idx` `--num_samples_eval`（设为 `-1` 表示评估全部剩余样本）
+- `Methods`: `--methods` `--max_new_tokens` `--temperature` `--top_p`
+- `Sampling Family`: `--num_samples` `--sample_temperature` `--sample_top_p` `--lexical_metric` `--p_true_with_context`
+- `Semantic Graph Family`: `--semantic_similarity_score` `--semantic_affinity` `--semantic_temperature` `--semantic_jaccard_threshold` `--nli_model_path` `--nli_device` `--nli_torch_dtype`
+- `Semantic Entropy Family`: `--semantic_class_source` `--equivalence_judger_model_path` `--equivalence_judger_device` `--equivalence_judger_torch_dtype` `--equivalence_judger_max_new_tokens`
+- `Judge`: `--jm_model_path` `--jm_device` `--judge_max_new_tokens` `--judge_mode`
+- `Output`: `--out_jsonl` `--out_metrics`
+
+一个较完整的示例：
+
+```bash
+lukit-eval \
+  --gm_model_path /path/to/model \
+  --gm_device cuda:0 \
+  --dataset_source hf \
+  --dataset_name trivia_qa_split \
+  --methods deg_mat,eccentricity,semantic_entropy,p_true \
+  --num_samples 4 \
+  --sample_temperature 0.8 \
+  --semantic_similarity_score nli \
+  --nli_model_path /path/to/nli-model \
+  --nli_device cuda:1 \
+  --semantic_class_source nli \
+  --jm_model_path /path/to/judge-model \
+  --jm_device cuda:2 \
+  --num_samples_eval 100 \
+  --out_jsonl ./results.jsonl \
+  --out_metrics ./metrics.json
 ```
 
 ### lukit-leaderboard
