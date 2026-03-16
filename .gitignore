@@ -7,8 +7,8 @@ __pycache__/
 *.log
 
 # Data
-# *.jsonl
-# *.json
+metrics*.json
+results*.jsonl
 
 # Model weights
 *.pt
