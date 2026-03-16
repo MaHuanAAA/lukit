@@ -1,0 +1,5 @@
+[console_scripts]
+lukit = lukit.cli.main:main
+lukit-eval = lukit.bin.evaluate:main
+lukit-leaderboard = lukit.bin.leaderboard:main
+lukit-visualize = lukit.bin.visualize:main
