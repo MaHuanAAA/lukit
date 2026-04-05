@@ -1,6 +1,6 @@
 # lukit
 
-`lukit` (LLM Uncertainty Kit) 是一个用于评估 LLM 回答不确定性（UQ）的 Python 工具包，支持批量评测与判别（judge），并提供论文写作所需的 LaTeX 表格和 matplotlib 图片生成功能。
+`lukit` (LLM Uncertainty Kit) 是一个用于评估 LLM 回答不确定性（UQ）的 Python 工具包，支持批量评测与判别（judge），并快捷提供论文写作所需的 LaTeX 表格和 matplotlib 实验结果图片生成功能。
 
 ## 特性
 
@@ -413,10 +413,5 @@ Apache License 2.0
 如果您在研究中使用了 LUKIT，请引用:
 
 ```bibtex
-@software{lukit2024,
-  title = {LUKIT: LLM Uncertainty Kit},
-  author = {LUKIT Contributors},
-  year = {2024},
-  url = {https://github.com/baidu/lukit}
-}
+@
 ```
